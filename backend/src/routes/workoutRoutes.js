@@ -1,12 +1,12 @@
-const express = require('express');
-const {
+import express from 'express';
+import {
   getWorkouts,
   createWorkout,
-} = require('../controllers/workoutController');
+} from '../controllers/workoutController.js';
 
 const router = express.Router();
 
 router.get('/', getWorkouts);
 router.post('/', createWorkout);
 
-module.exports = router;
+export default router;

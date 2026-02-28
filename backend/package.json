@@ -2,6 +2,7 @@
   "name": "workout-buddy-backend",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "MVC backend for Workout Buddy",
   "main": "src/server.js",
   "scripts": {

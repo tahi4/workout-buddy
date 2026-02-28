@@ -1,6 +1,8 @@
-require('dotenv').config();
-const app = require('./app');
-const connectDB = require('./config/db');
+import dotenv from 'dotenv';
+import app from './app.js';
+import connectDB from './config/db.js';
+
+dotenv.config();
 
 const PORT = Number(process.env.PORT) || 5000;
 const MAX_PORT_RETRIES = 10;

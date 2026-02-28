@@ -1,4 +1,4 @@
-const Workout = require('../models/Workout');
+import Workout from '../models/Workout.js';
 
 const getWorkouts = async (req, res) => {
   try {
@@ -24,7 +24,7 @@ const createWorkout = async (req, res) => {
 };
 
 
-module.exports = {
+export {
   getWorkouts,
   createWorkout,
 };

@@ -1,7 +1,6 @@
-const express = require('express');
-const cors = require('cors');
-const routes = require('./routes');
-
+import express from 'express';
+import cors from 'cors';
+import user from './routes/userRoutes.js'
 const app = express();
 
 app.use(cors());
@@ -11,7 +10,6 @@ app.get('/', (req, res) => {
   res.send('Hello from backend API!');
 });
 
+app.use('/user', user);
 
-app.use('/api', routes);
-
-module.exports = app;
+export default app;

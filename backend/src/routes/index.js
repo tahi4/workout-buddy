@@ -1,8 +1,9 @@
-const express = require('express');
-const workoutRoutes = require('./workoutRoutes');
+import express from 'express';
+import workoutRoutes from './workoutRoutes.js';
+
 
 const router = express.Router();
 
 router.use('/workouts', workoutRoutes);
 
-module.exports = router;
+export default router;
