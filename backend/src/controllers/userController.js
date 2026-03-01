@@ -545,37 +545,219 @@ export async function resolveBuddyChallenge(req, res) {
       (entry) => String(entry.userId) === String(challenge.target)
     );
 
+    challenge.proof.verifiedAt = new Date();
+    challenge.proof.verifiedBy = id;
+    challenge.proof.verificationNote = typeof note === 'string' ? note.trim() : null;
+
     if (accepted) {
       finalTargetScore.points += challenge.points;
-      await buddyPair.save();
-
-      if (challenge.proof?.fileId) {
-        await deleteProofFromGridFS(challenge.proof.fileId).catch(() => null);
-      }
-
-      await BuddyChallenge.deleteOne({ _id: challenge._id });
+      challenge.status = 'accepted';
+      await Promise.all([buddyPair.save(), challenge.save()]);
 
       return res.status(200).json({
-        message: 'Challenge accepted, points awarded, and challenge deleted',
-        memberScores: buddyPair.memberScores,
-      });
-    } else {
-      finalTargetScore.penalties += 1;
-      await buddyPair.save();
-
-      if (challenge.proof?.fileId) {
-        await deleteProofFromGridFS(challenge.proof.fileId).catch(() => null);
-      }
-
-      await BuddyChallenge.deleteOne({ _id: challenge._id });
-
-      return res.status(200).json({
-        message: 'Challenge rejected, penalty issued, and challenge deleted',
+        message: 'Challenge accepted and points awarded',
+        challenge,
         memberScores: buddyPair.memberScores,
       });
     }
+
+    finalTargetScore.penalties += 1;
+    challenge.status = 'rejected';
+    await Promise.all([buddyPair.save(), challenge.save()]);
+
+    return res.status(200).json({
+      message: 'Challenge rejected and penalty issued',
+      challenge,
+      memberScores: buddyPair.memberScores,
+    });
   } catch (error) {
     console.error('resolveBuddyChallenge error:', error);
     return res.status(500).json({ message: 'Failed to resolve challenge' });
+  }
+}
+
+export async function getUserHistory(req, res) {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid user id' });
+    }
+
+    const user = await Users.findById(id).select('_id streak');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const buddyPair = await BuddyPair.findOne({
+      members: user._id,
+    })
+      .sort({ createdAt: -1 })
+      .select('_id combinedStreak totalWorkoutsCompleted');
+
+    if (!buddyPair) {
+      return res.status(200).json({
+        userId: id,
+        streak: user.streak?.current || 0,
+        totalWorkouts: 0,
+        weeks: [],
+      });
+    }
+
+    const buddyWorkout = await BuddyWorkout.findOne({
+      buddyPairId: buddyPair._id,
+    }).select('workouts weeklyHistory');
+
+    const weeklyHistory = Array.isArray(buddyWorkout?.weeklyHistory)
+      ? buddyWorkout.weeklyHistory
+      : [];
+
+    const weeks = weeklyHistory
+      .map((entry) => ({
+        weekStartDate: entry.date,
+        workoutsCompleted: Array.isArray(entry.workouts) ? entry.workouts.length : 0,
+      }))
+      .sort((a, b) => new Date(b.weekStartDate) - new Date(a.weekStartDate));
+
+    const fallbackTotalFromWorkoutDoc = Array.isArray(buddyWorkout?.workouts)
+      ? buddyWorkout.workouts.length
+      : 0;
+
+    const totalWorkouts =
+      Number.isInteger(buddyPair.totalWorkoutsCompleted) && buddyPair.totalWorkoutsCompleted >= 0
+        ? buddyPair.totalWorkoutsCompleted
+        : fallbackTotalFromWorkoutDoc;
+
+    return res.status(200).json({
+      userId: id,
+      streak: buddyPair.combinedStreak?.current ?? user.streak?.current ?? 0,
+      totalWorkouts,
+      weeks,
+    });
+  } catch (error) {
+    console.error('getUserHistory error:', error);
+    return res.status(500).json({ message: 'Failed to fetch user history' });
+  }
+}
+
+export async function getChallengePhotos(req, res) {
+  try {
+    const { id } = req.params;
+    const limit = Math.max(1, Math.min(Number(req.query.limit) || 10, 50));
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid user id' });
+    }
+
+    const user = await Users.findById(id).select('_id');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const challenges = await BuddyChallenge.find({
+      $or: [{ challenger: user._id }, { target: user._id }],
+      'proof.fileId': { $ne: null },
+      'proof.submittedAt': { $ne: null },
+    })
+      .sort({ 'proof.submittedAt': -1 })
+      .limit(limit)
+      .select('challenger target workoutType status points deadline proof');
+
+    const photos = challenges.map((challenge) => ({
+      challengeId: challenge._id,
+      submittedAt: challenge.proof.submittedAt,
+      workoutType: challenge.workoutType,
+      status: challenge.status,
+      points: challenge.points,
+      deadline: challenge.deadline,
+      submittedBy: challenge.proof.submittedBy,
+      file: {
+        filename: challenge.proof.filename,
+        contentType: challenge.proof.contentType,
+        size: challenge.proof.size,
+      },
+      proofUrl: `/user/${id}/challenges/${challenge._id}/proof`,
+      challenger: challenge.challenger,
+      target: challenge.target,
+    }));
+
+    return res.status(200).json({
+      userId: id,
+      count: photos.length,
+      photos,
+    });
+  } catch (error) {
+    console.error('getChallengePhotos error:', error);
+    return res.status(500).json({ message: 'Failed to fetch challenge photos' });
+  }
+}
+
+export async function getCurrentStakes(req, res) {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ message: 'Invalid user id' });
+    }
+
+    const user = await Users.findById(id).select('_id');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const now = new Date();
+
+    let challenge = await Challenge.findOne({
+      participants: user._id,
+      status: 'active',
+      startDate: { $lte: now },
+      endDate: { $gte: now },
+    }).sort({ startDate: -1 });
+
+    if (!challenge) {
+      challenge = await Challenge.findOne({
+        participants: user._id,
+      }).sort({ startDate: -1 });
+    }
+
+    if (!challenge) {
+      return res.status(200).json({
+        userId: id,
+        hasCurrentStake: false,
+        stake: null,
+      });
+    }
+
+    const buddyPair = await BuddyPair.findOne({
+      members: user._id,
+      status: 'active',
+    }).select('memberScores');
+
+    const userScore = buddyPair?.memberScores?.find(
+      (entry) => String(entry.userId) === String(user._id)
+    );
+
+    return res.status(200).json({
+      userId: id,
+      hasCurrentStake: true,
+      stake: {
+        challengeId: challenge._id,
+        weeklyWorkoutGoal: challenge.weeklyWorkoutGoal,
+        stake: challenge.stake,
+        status: challenge.status,
+        startDate: challenge.startDate,
+        endDate: challenge.endDate,
+      },
+      score: {
+        points: userScore?.points || 0,
+        penalties: userScore?.penalties || 0,
+      },
+    });
+  } catch (error) {
+    console.error('getCurrentStakes error:', error);
+    return res.status(500).json({ message: 'Failed to fetch current stakes' });
   }
 }

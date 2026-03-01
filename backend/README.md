@@ -98,6 +98,52 @@ Response:
 | ------ | -------- | ----------- |
 | GET | `/user/:id/weekly-workout-routine` | Get routine data from active buddy pairs and buddy workouts |
 
+### View Support Endpoints
+
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| GET | `/user/:id/history` | Get streak, total workouts, and weekly history summary for History view |
+| GET | `/user/:id/challenge-photos` | Get recent challenge proof photo metadata for dashboard carousel |
+| GET | `/user/:id/current-stakes` | Get current weekly stake details and user score snapshot |
+
+#### `GET /user/:id/history`
+
+Response shape:
+
+```json
+{
+	"userId": "<ObjectId>",
+	"streak": 3,
+	"totalWorkouts": 18,
+	"weeks": [
+		{
+			"weekStartDate": "2026-02-23T00:00:00.000Z",
+			"workoutsCompleted": 4
+		}
+	]
+}
+```
+
+#### `GET /user/:id/challenge-photos`
+
+Optional query params:
+
+- `limit` (default `10`, max `50`)
+
+Response includes:
+
+- challenge metadata (`challengeId`, `workoutType`, `status`, `points`, `deadline`)
+- uploaded proof file metadata (`filename`, `contentType`, `size`)
+- `proofUrl` that can be used to stream image bytes
+
+#### `GET /user/:id/current-stakes`
+
+Response includes:
+
+- `hasCurrentStake` flag
+- active or most recent weekly bet details
+- user score snapshot from active buddy pair (`points`, `penalties`)
+
 ### Weekly Bets
 
 | Method | Endpoint | Description |
@@ -172,12 +218,12 @@ Rules:
 - Challenge must be in `proof_submitted` state.
 - `accepted: true`
 	- target gets challenge points in `buddyPair.memberScores`
-	- challenge proof file is deleted from GridFS
-	- challenge record is deleted
+	- challenge status becomes `accepted`
+	- proof file and challenge record are retained
 - `accepted: false`
 	- target gets `+1` penalty in `buddyPair.memberScores`
-	- challenge proof file is deleted from GridFS
-	- challenge record is deleted
+	- challenge status becomes `rejected`
+	- proof file and challenge record are retained
 
 ## Data Collections Used
 
