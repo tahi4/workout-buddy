@@ -228,8 +228,6 @@ export async function createWeeklyBet(req, res) {
     const { id } = req.params;
     const { buddyId, weeklyWorkoutGoal, stake, startDate, status } = req.body;
     
-    console.log('createWeeklyBet called with params:', { id, buddyId });
-    console.log('createWeeklyBet req.body:', req.body);
     if (!mongoose.isValidObjectId(id) || !mongoose.isValidObjectId(buddyId)) {
       return res.status(400).json({ message: 'Invalid user id or buddy id' });
     }
@@ -243,7 +241,6 @@ export async function createWeeklyBet(req, res) {
       Users.findById(buddyId).select('_id'),
     ]);
     
-    console.log('createWeeklyBet lookup results - user:', !!user, 'buddyUser:', !!buddyUser);
     if (!user || !buddyUser) {
       return res.status(404).json({ message: 'User or buddy not found' });
     }
