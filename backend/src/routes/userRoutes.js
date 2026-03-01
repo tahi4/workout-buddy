@@ -7,8 +7,11 @@ import {
   getAllowedStakes,
   createWeeklyBet,
   createBuddyChallenge,
+  getChallengeProof,
+  submitChallengeProof,
   resolveBuddyChallenge,
 } from '../controllers/userController.js';
+import proofUpload from '../middleware/proofUpload.js';
 
 const router = express.Router();
 
@@ -24,6 +27,8 @@ router.put('/:id/buddy/:pairingCode', buddyUp);
 router.get('/:id/weekly-workout-routine', getWeeklyWorkoutRoutine);
 router.post('/:id/weekly-bets', createWeeklyBet);
 router.post('/:id/challenges', createBuddyChallenge);
+router.get('/:id/challenges/:challengeId/proof', getChallengeProof);
+router.post('/:id/challenges/:challengeId/proof', proofUpload.single('proof'), submitChallengeProof);
 router.put('/:id/challenges/:challengeId/resolve', resolveBuddyChallenge);
 
 export default router;

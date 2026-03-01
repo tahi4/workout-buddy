@@ -9,7 +9,18 @@ const buddyChallengeSchema = new mongoose.Schema({
   status: { type: String, default: 'pending' },
   createdAt: { type: Date, default: Date.now },
   deadline: { type: Date, required: true },
-  proof: { type: mongoose.Schema.Types.Mixed, default: null },
+  proof: {
+    fileId: { type: String, default: null },
+    filename: { type: String, default: null },
+    contentType: { type: String, default: null },
+    size: { type: Number, default: null },
+    bucket: { type: String, default: null },
+    submittedAt: { type: Date, default: null },
+    submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    verifiedAt: { type: Date, default: null },
+    verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    verificationNote: { type: String, default: null },
+  },
 });
 
 const BuddyChallenge = mongoose.model('BuddyChallenge', buddyChallengeSchema, 'challenges');

@@ -3,6 +3,11 @@ import BuddyPair from '../models/BuddyPair.js';
 import BuddyWorkout from '../models/BuddyWorkout.js';
 import Challenge from '../models/Challenge.js';
 import BuddyChallenge from '../models/BuddyChallenge.js';
+import {
+  deleteProofFromGridFS,
+  getProofDownloadStream,
+  uploadProofToGridFS,
+} from '../config/gridfs.js';
 import mongoose from 'mongoose';
 
 const ALLOWED_STAKES = [
@@ -354,7 +359,18 @@ export async function createBuddyChallenge(req, res) {
       status: 'pending',
       createdAt: new Date(),
       deadline: parsedDeadline,
-      proof: null,
+      proof: {
+        fileId: null,
+        filename: null,
+        contentType: null,
+        size: null,
+        bucket: null,
+        submittedAt: null,
+        submittedBy: null,
+        verifiedAt: null,
+        verifiedBy: null,
+        verificationNote: null,
+      },
     });
 
     return res.status(201).json(challenge);
@@ -363,17 +379,16 @@ export async function createBuddyChallenge(req, res) {
   }
 }
 
-export async function resolveBuddyChallenge(req, res) {
+export async function submitChallengeProof(req, res) {
   try {
     const { id, challengeId } = req.params;
-    const { succeeded, proof } = req.body;
 
     if (!mongoose.isValidObjectId(id) || !mongoose.isValidObjectId(challengeId)) {
       return res.status(400).json({ message: 'Invalid user id or challenge id' });
     }
 
-    if (typeof succeeded !== 'boolean') {
-      return res.status(400).json({ message: 'succeeded must be true or false' });
+    if (!req.file) {
+      return res.status(400).json({ message: 'Proof image file is required' });
     }
 
     const challenge = await BuddyChallenge.findById(challengeId);
@@ -381,12 +396,128 @@ export async function resolveBuddyChallenge(req, res) {
       return res.status(404).json({ message: 'Challenge not found' });
     }
 
-    if (challenge.status !== 'pending') {
-      return res.status(400).json({ message: 'Challenge already resolved' });
+    if (String(challenge.target) !== String(id)) {
+      return res.status(403).json({ message: 'Only the target buddy can submit proof' });
     }
 
-    if (String(challenge.target) !== String(id)) {
-      return res.status(403).json({ message: 'Only the target buddy can resolve this challenge' });
+    if (challenge.status !== 'pending') {
+      return res.status(400).json({ message: 'Challenge is not accepting proof submissions' });
+    }
+
+    if (challenge.deadline && new Date() > challenge.deadline) {
+      return res.status(400).json({ message: 'Challenge deadline has passed' });
+    }
+
+    const uploadResult = await uploadProofToGridFS({
+      buffer: req.file.buffer,
+      filename: req.file.originalname,
+      contentType: req.file.mimetype,
+      metadata: {
+        challengeId,
+        targetId: id,
+      },
+    });
+
+    if (challenge.proof?.fileId) {
+      await deleteProofFromGridFS(challenge.proof.fileId).catch(() => null);
+    }
+
+    challenge.proof = {
+      fileId: uploadResult.fileId,
+      filename: uploadResult.filename,
+      contentType: uploadResult.contentType,
+      size: uploadResult.size,
+      bucket: uploadResult.bucket,
+      submittedAt: new Date(),
+      submittedBy: id,
+      verifiedAt: null,
+      verifiedBy: null,
+      verificationNote: null,
+    };
+    challenge.status = 'proof_submitted';
+
+    await challenge.save();
+
+    return res.status(200).json({
+      message: 'Proof uploaded successfully',
+      challenge,
+    });
+  } catch (error) {
+    console.error('submitChallengeProof error:', error);
+    return res.status(500).json({ message: 'Failed to submit challenge proof' });
+  }
+}
+
+export async function getChallengeProof(req, res) {
+  try {
+    const { id, challengeId } = req.params;
+
+    if (!mongoose.isValidObjectId(id) || !mongoose.isValidObjectId(challengeId)) {
+      return res.status(400).json({ message: 'Invalid user id or challenge id' });
+    }
+
+    const challenge = await BuddyChallenge.findById(challengeId);
+    if (!challenge) {
+      return res.status(404).json({ message: 'Challenge not found' });
+    }
+
+    const isParticipant =
+      String(challenge.challenger) === String(id) || String(challenge.target) === String(id);
+
+    if (!isParticipant) {
+      return res.status(403).json({ message: 'Only challenge participants can view proof' });
+    }
+
+    if (!challenge.proof?.fileId) {
+      return res.status(404).json({ message: 'Proof not found' });
+    }
+
+    res.setHeader('Content-Type', challenge.proof.contentType || 'application/octet-stream');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${challenge.proof.filename || 'proof-image'}"`
+    );
+
+    const downloadStream = getProofDownloadStream(challenge.proof.fileId);
+    downloadStream.on('error', () => {
+      if (!res.headersSent) {
+        res.status(404).json({ message: 'Proof file not found' });
+      } else {
+        res.end();
+      }
+    });
+
+    downloadStream.pipe(res);
+  } catch (error) {
+    console.error('getChallengeProof error:', error);
+    return res.status(500).json({ message: 'Failed to fetch challenge proof' });
+  }
+}
+
+export async function resolveBuddyChallenge(req, res) {
+  try {
+    const { id, challengeId } = req.params;
+    const { accepted, note } = req.body;
+
+    if (!mongoose.isValidObjectId(id) || !mongoose.isValidObjectId(challengeId)) {
+      return res.status(400).json({ message: 'Invalid user id or challenge id' });
+    }
+
+    if (typeof accepted !== 'boolean') {
+      return res.status(400).json({ message: 'accepted must be true or false' });
+    }
+
+    const challenge = await BuddyChallenge.findById(challengeId);
+    if (!challenge) {
+      return res.status(404).json({ message: 'Challenge not found' });
+    }
+
+    if (challenge.status !== 'proof_submitted') {
+      return res.status(400).json({ message: 'Challenge proof has not been submitted for verification' });
+    }
+
+    if (String(challenge.challenger) !== String(id)) {
+      return res.status(403).json({ message: 'Only the challenger can verify this challenge proof' });
     }
 
     const buddyPair = await BuddyPair.findById(challenge.buddyPairId);
@@ -414,20 +545,37 @@ export async function resolveBuddyChallenge(req, res) {
       (entry) => String(entry.userId) === String(challenge.target)
     );
 
-    if (succeeded) {
+    if (accepted) {
       finalTargetScore.points += challenge.points;
-      challenge.status = 'completed';
+      await buddyPair.save();
+
+      if (challenge.proof?.fileId) {
+        await deleteProofFromGridFS(challenge.proof.fileId).catch(() => null);
+      }
+
+      await BuddyChallenge.deleteOne({ _id: challenge._id });
+
+      return res.status(200).json({
+        message: 'Challenge accepted, points awarded, and challenge deleted',
+        memberScores: buddyPair.memberScores,
+      });
     } else {
       finalTargetScore.penalties += 1;
-      challenge.status = 'failed';
+      await buddyPair.save();
+
+      if (challenge.proof?.fileId) {
+        await deleteProofFromGridFS(challenge.proof.fileId).catch(() => null);
+      }
+
+      await BuddyChallenge.deleteOne({ _id: challenge._id });
+
+      return res.status(200).json({
+        message: 'Challenge rejected, penalty issued, and challenge deleted',
+        memberScores: buddyPair.memberScores,
+      });
     }
-
-    challenge.proof = proof ?? null;
-
-    await Promise.all([challenge.save(), buddyPair.save()]);
-
-    return res.status(200).json({ challenge, memberScores: buddyPair.memberScores });
   } catch (error) {
+    console.error('resolveBuddyChallenge error:', error);
     return res.status(500).json({ message: 'Failed to resolve challenge' });
   }
 }
