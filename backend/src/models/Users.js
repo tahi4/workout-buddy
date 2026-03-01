@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 const userSchema = new mongoose.Schema({
   name: String,
   email: { type: String, unique: true },
+  pairingCode: { type: String, unique: true, sparse: true },
   passwordHash: String,
   profile: {
     age: Number,
@@ -29,7 +30,6 @@ const userSchema = new mongoose.Schema({
   habits: [{ name: String, completedDates: [Date] }],
   createdAt: { type: Date, default: Date.now }
 });
-
 const User = mongoose.model('User', userSchema, 'user');
 
 export default User;

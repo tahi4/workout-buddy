@@ -1,15 +1,15 @@
 import Workout from '../models/Workout.js';
 
-const getWorkouts = async (req, res) => {
+export async function getWorkouts(req, res) {
   try {
     const workouts = await Workout.find().sort({ createdAt: -1 });
     res.status(200).json(workouts);
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch workouts' });
   }
-};
+}
 
-const createWorkout = async (req, res) => {
+export async function createWorkout(req, res) {
   try {
     const { title, durationMinutes } = req.body;
     const workout = await Workout.create({ title, durationMinutes });
@@ -21,10 +21,4 @@ const createWorkout = async (req, res) => {
 
     res.status(500).json({ message: 'Failed to create workout' });
   }
-};
-
-
-export {
-  getWorkouts,
-  createWorkout,
-};
+}
